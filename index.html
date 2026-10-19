@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VHS Title Builder</title>
+<!-- Optional free fonts for the picker. Offline, the app still works and those fonts fall back. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo+Black&family=Audiowide&family=Bungee&family=Chakra+Petch:wght@700&family=Exo+2:wght@800&family=Major+Mono+Display&family=Michroma&family=Monoton&family=Orbitron:wght@900&family=Oxanium:wght@800&family=Press+Start+2P&family=Rajdhani:wght@700&family=Russo+One&family=Share+Tech+Mono&family=Syncopate:wght@700&family=VT323&display=swap">
 <style>
   :root {
     --bg: #0a080d;
@@ -65,6 +69,11 @@
   input[type=text], select { width: 100%; background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; outline: none; }
   input[type=text]:focus, select:focus { border-color: var(--accent); }
   input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; }
+  .fonts { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 38px; gap: 6px; max-height: 236px; overflow-y: auto; padding: 2px; margin: -2px; }
+  .font-tile { background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 0 9px; cursor: pointer; height: 38px;
+    font-size: 15px; line-height: 1.1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #e9dff0; }
+  .font-tile:hover { border-color: #463c50; }
+  .font-tile.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; color: #fff; }
   .colors { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .color { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
   .color input { width: 30px; height: 26px; border: 1px solid var(--line); border-radius: 6px; padding: 0; background: none; cursor: pointer; flex: none; }
@@ -115,34 +124,51 @@
 'use strict';
 
 const W = 1920, H = 1080;
-const STORE_KEY = 'vhs-title-builder:v1';
+const STORE_KEY = 'vhs-title-builder:v2';   // bumped when defaults change
 
 const FONTS = {
-  arialBlack: { label: 'Arial Black',        family: '"Arial Black", "Arial Bold", Gadget, Arial, sans-serif', weight: 900 },
-  impact:     { label: 'Impact',             family: 'Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif', weight: 400 },
-  helvetica:  { label: 'Helvetica Bold',     family: '"Helvetica Neue", Helvetica, Arial, sans-serif', weight: 800 },
-  futura:     { label: 'Futura',             family: 'Futura, "Century Gothic", "Trebuchet MS", sans-serif', weight: 800 },
-  verdana:    { label: 'Verdana Bold',       family: 'Verdana, Geneva, sans-serif', weight: 800 },
-  system:     { label: 'System Black',       family: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', weight: 900 },
-  georgia:    { label: 'Georgia (serif)',    family: 'Georgia, "Times New Roman", serif', weight: 700 },
-  courier:    { label: 'Courier (VCR)',      family: '"Courier New", Courier, monospace', weight: 700 },
+  arialBlack: { label: 'Arial Black',      family: '"Arial Black", "Arial Bold", Gadget, Arial, sans-serif', weight: 900 },
+  impact:     { label: 'Impact',           family: 'Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif', weight: 400 },
+  helvetica:  { label: 'Helvetica Bold',   family: '"Helvetica Neue", Helvetica, Arial, sans-serif', weight: 800 },
+  futura:     { label: 'Futura',           family: 'Futura, "Century Gothic", "Trebuchet MS", sans-serif', weight: 800 },
+  georgia:    { label: 'Georgia',          family: 'Georgia, "Times New Roman", serif', weight: 700 },
+  times:      { label: 'Times',            family: '"Times New Roman", Times, serif', weight: 400 },
+  courier:    { label: 'Courier',          family: '"Courier New", Courier, monospace', weight: 700 },
+  menlo:      { label: 'Menlo',            family: 'Menlo, Monaco, Consolas, monospace', weight: 700 },
+  orbitron:   { label: 'Orbitron',         family: 'Orbitron, sans-serif', weight: 900 },
+  audiowide:  { label: 'Audiowide',        family: 'Audiowide, sans-serif', weight: 400 },
+  michroma:   { label: 'Michroma',         family: 'Michroma, sans-serif', weight: 400 },
+  russo:      { label: 'Russo One',        family: '"Russo One", sans-serif', weight: 400 },
+  exo:        { label: 'Exo 2',            family: '"Exo 2", sans-serif', weight: 800 },
+  oxanium:    { label: 'Oxanium',          family: 'Oxanium, sans-serif', weight: 800 },
+  chakra:     { label: 'Chakra Petch',     family: '"Chakra Petch", sans-serif', weight: 700 },
+  rajdhani:   { label: 'Rajdhani',         family: 'Rajdhani, sans-serif', weight: 700 },
+  syncopate:  { label: 'Syncopate',        family: 'Syncopate, sans-serif', weight: 700 },
+  shareTech:  { label: 'Share Tech Mono',  family: '"Share Tech Mono", monospace', weight: 400 },
+  vt323:      { label: 'VT323',            family: 'VT323, monospace', weight: 400 },
+  pressStart: { label: 'Press Start 2P',   family: '"Press Start 2P", monospace', weight: 400 },
+  majorMono:  { label: 'Major Mono',       family: '"Major Mono Display", monospace', weight: 400 },
+  bungee:     { label: 'Bungee',           family: 'Bungee, sans-serif', weight: 400 },
+  monoton:    { label: 'Monoton',          family: 'Monoton, sans-serif', weight: 400 },
+  anton:      { label: 'Anton',            family: 'Anton, sans-serif', weight: 400 },
+  archivo:    { label: 'Archivo Black',    family: '"Archivo Black", sans-serif', weight: 400 },
 };
 
 const DEFAULTS = {
-  line1: 'Summer', line2: 'Memories', subtitle: 'July 1994  ·  Lake Tahoe',
+  line1: 'Summer', line2: 'Memories', subtitle: '',
   font: 'arialBlack', uppercase: true,
-  titleSize: 220, letterSpacing: 6, lineHeight: 0.98, titleX: 0, titleY: 40,
+  titleSize: 220, letterSpacing: 6, lineHeight: 0.98, titleX: 0, titleY: 0,
   subSize: 40, subSpacing: 16, subY: 250,
   bgColor: '#07040a', textColor: '#ffcdea', glowColor: '#ff2f9e', glow2Color: '#8a3dff',
   abColorA: '#ff4a14', abColorB: '#2266ff',
-  glow: 1.15, blur: 2, aberration: 7, scanlines: 0.5, grain: 0.35, distortion: 0.5,
-  flicker: 0.4, tracking: 0.45, vignette: 0.65,
+  glow: 1.3, blur: 3.5, smear: 0.55, aberration: 7, scanlines: 0.65, grain: 0.65, distortion: 0.7,
+  flicker: 0.5, tracking: 0.7, vignette: 0.7,
   duration: 6, intro: 2.4, loop: true, fadeOut: false,
   format: '', fps: 30, bitrate: 20,
 };
 
 // Keys that only affect per-frame effects; everything else requires re-rasterising the text.
-const LIVE_KEYS = new Set(['aberration', 'scanlines', 'grain', 'distortion', 'flicker', 'tracking', 'vignette',
+const LIVE_KEYS = new Set(['smear', 'aberration', 'scanlines', 'grain', 'distortion', 'flicker', 'tracking', 'vignette',
   'duration', 'intro', 'loop', 'fadeOut', 'format', 'fps', 'bitrate', 'bgColor']);
 
 let S = load();
@@ -252,7 +278,17 @@ function buildGroup(lines, size, sp, lh, cx, cy) {
   const [ghostB, bc] = layer();
   blurPaint(bc, paint, S.abColorB, S.blur * 1.5 + 3, 0.95);
 
-  return { x: x0, y: y0, w, h, core, glow, ghostA, ghostB, scratch: mk(w, h) };
+  // Horizontal smear: VHS luma bleeds to the right, chroma bleeds both ways.
+  const [smear, sm] = layer();
+  const reach = size * 0.45, steps = 14;
+  for (let i = 1; i <= steps; i++) {
+    const k = i / steps;
+    sm.globalAlpha = 0.16 * (1 - k) * (1 - k);
+    sm.drawImage(core, reach * k, 0);
+    sm.drawImage(glow, -reach * k * 0.5, 0);
+  }
+
+  return { x: x0, y: y0, w, h, core, glow, ghostA, ghostB, smear, scratch: mk(w, h) };
 }
 
 function rebuild() {
@@ -278,7 +314,7 @@ function hexA(hex, a) {
 }
 
 // Static overlays built once.
-const NOISE_W = 960, NOISE_H = 540;
+const NOISE_W = 640, NOISE_H = 360;   // scaled 3x for a coarser, tape-like grain
 const noise = Array.from({ length: 6 }, () => {
   const c = mk(NOISE_W, NOISE_H), x = c.getContext('2d');
   const img = x.createImageData(NOISE_W, NOISE_H), d = img.data;
@@ -371,6 +407,7 @@ function drawGroup(g, st, trackY, fi) {
   s.globalAlpha = 0.9;
   s.drawImage(g.ghostA, -ab, -ab * 0.1);
   s.drawImage(g.ghostB, ab, ab * 0.1);
+  if (S.smear > 0) { s.globalAlpha = clamp(S.smear * (1 + 0.5 * st.glitch)); s.drawImage(g.smear, 0, 0); }
   s.globalAlpha = st.core; s.drawImage(g.core, 0, 0);
 
   // The block moves as one piece (shake + roll). Only where the rolling tracking
@@ -649,23 +686,30 @@ document.getElementById('pngBtn').onclick = () => {
    Control panel
    ================================================================ */
 const fontOptions = () => {
-  const o = Object.entries(FONTS).map(([v, f]) => [v, f.label]);
-  if (customFontLabel) o.push(['custom', 'Uploaded: ' + customFontLabel]);
+  const o = Object.entries(FONTS).map(([id, f]) => ({ id, ...f }));
+  if (customFontLabel) o.push({ id: 'custom', label: customFontLabel, family: '"VHSCustomFont", sans-serif', weight: 400 });
   return o;
 };
+
+// Make sure the chosen web font is actually loaded before the canvas uses it.
+function ensureFont() {
+  if (!document.fonts || !document.fonts.load) return;
+  document.fonts.load(fontSpec(100), 'SUMMER 1994').then(() => { dirty = true; }, () => {});
+}
 
 const SECTIONS = [
   { title: 'Text', open: true, items: [
     { k: 'line1', type: 'text', label: 'Title — line 1' },
     { k: 'line2', type: 'text', label: 'Title — line 2' },
     { k: 'subtitle', type: 'text', label: 'Top text (date, place, subtitle)' },
-    { k: 'font', type: 'select', label: 'Font', options: fontOptions },
+    { k: 'font', type: 'fonts', label: 'Font' },
     { type: 'fontUpload' },
     { k: 'uppercase', type: 'check', label: 'Force uppercase' },
   ] },
   { title: 'Analog look', open: true, items: [
     { k: 'glow', type: 'range', label: 'Glow', min: 0, max: 2, step: 0.01 },
     { k: 'blur', type: 'range', label: 'Softness / blur', min: 0, max: 12, step: 0.1, unit: 'px' },
+    { k: 'smear', type: 'range', label: 'Horizontal smear', min: 0, max: 1, step: 0.01 },
     { k: 'aberration', type: 'range', label: 'Chromatic aberration', min: 0, max: 30, step: 0.5, unit: 'px' },
     { k: 'scanlines', type: 'range', label: 'Scanlines', min: 0, max: 1, step: 0.01 },
     { k: 'grain', type: 'range', label: 'Grain', min: 0, max: 1, step: 0.01 },
@@ -739,6 +783,22 @@ function buildControl(it) {
     refreshers.push(() => { inp.value = S[it.k]; show(); });
     show();
     return el('label', { class: 'field' }, el('div', { class: 'top' }, el('span', {}, it.label), out), inp);
+  }
+  if (it.type === 'fonts') {
+    const grid = el('div', { class: 'fonts', role: 'listbox', 'aria-label': 'Font' });
+    const fill = () => {
+      grid.innerHTML = '';
+      for (const f of fontOptions()) {
+        const b = el('button', { type: 'button', class: 'font-tile' + (S.font === f.id ? ' on' : ''), textContent: f.label, title: f.label });
+        b.style.fontFamily = f.family;
+        b.style.fontWeight = f.weight;
+        b.onclick = () => { set('font', f.id); ensureFont(); fill(); };
+        grid.append(b);
+      }
+    };
+    refreshers.push(fill);
+    fill();
+    return el('div', { class: 'field' }, el('div', { class: 'top' }, it.label), grid);
   }
   if (it.type === 'select') {
     const sel = el('select');
@@ -861,6 +921,8 @@ fontFile.onchange = async () => {
 setPlaying(true);
 updateRecUI();
 (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(() => { dirty = true; });
+if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => { dirty = true; });
+ensureFont();
 requestAnimationFrame(t => { last = t; requestAnimationFrame(tick); });
 
 // Small hook for automated testing.

@@ -10,7 +10,8 @@ Open `index.html` in a current Chrome, Edge, Firefox or Safari. It needs no serv
 - Analog look: pink/purple glow, red/blue chromatic fringing, scanlines, tape grain, flicker, tracking noise, head-switching noise, vignette
 - The title glitches in, settles, and then has occasional tracking hiccups (with an optional glitch-out at the end)
 - Play / pause / replay and a timeline scrubber (Space toggles playback)
-- Settings are kept in your browser between visits. You can also load your own font file
+- 25 fonts with a visual picker, including tech fonts (Orbitron, Audiowide, VT323, Press Start 2P…) loaded from Google Fonts when online. You can also load your own font file
+- Settings are kept in your browser between visits
 
 ## Export
 
