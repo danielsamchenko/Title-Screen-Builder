@@ -1,0 +1,885 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VHS Title Builder</title>
+<style>
+  :root {
+    --bg: #0a080d;
+    --panel: #131017;
+    --panel-2: #1a1620;
+    --line: #29232f;
+    --text: #ece6f0;
+    --muted: #958aa1;
+    --accent: #ff4fa8;
+    --accent-2: #9b5cff;
+    --rec: #ff3348;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  button, select, input { font: inherit; color: inherit; }
+
+  .app { display: grid; grid-template-columns: minmax(0, 1fr) 360px; height: 100vh; }
+
+  /* ---------- stage ---------- */
+  .stage { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 14px 18px 16px; gap: 12px; }
+  header { display: flex; align-items: center; gap: 12px; }
+  .brand { font-weight: 800; letter-spacing: .22em; font-size: 11px; text-transform: uppercase; color: var(--muted); margin-right: auto; }
+  .brand b { color: var(--accent); text-shadow: 0 0 10px rgba(255, 79, 168, .6); }
+  .viewport { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  #screen { display: block; background: #000; border-radius: 4px;
+    box-shadow: 0 0 0 1px var(--line), 0 24px 70px rgba(0, 0, 0, .7), 0 0 120px rgba(155, 92, 255, .08); }
+
+  .transport { display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 12px; }
+  .transport input[type=range] { flex: 1; }
+  .time { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 92px; text-align: right; font-size: 12px; }
+
+  .btn { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; transition: border-color .15s, background .15s; }
+  .btn:hover { border-color: #463c50; background: #211b28; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.icon { width: 34px; height: 34px; padding: 0; justify-content: center; }
+  .btn.primary { background: linear-gradient(135deg, #ff4fa8, #9b5cff); border-color: transparent; color: #fff; font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.recording { background: var(--rec); border-color: transparent; color: #fff; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+  .recording .dot { animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .2; } }
+  .btn svg { width: 14px; height: 14px; fill: currentColor; }
+
+  /* ---------- sidebar ---------- */
+  aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; min-height: 0; }
+  details { border-bottom: 1px solid var(--line); }
+  summary { list-style: none; cursor: pointer; padding: 13px 16px; font-weight: 650; font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: #cfc4d8; display: flex; align-items: center; justify-content: space-between; user-select: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; color: var(--muted); font-size: 15px; font-weight: 400; }
+  details[open] summary::after { content: "–"; }
+  .body { padding: 0 16px 16px; display: grid; gap: 12px; }
+  .field { display: grid; gap: 5px; }
+  .field > .top { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
+  .field > .top output { color: var(--text); font-variant-numeric: tabular-nums; }
+  input[type=text], select { width: 100%; background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; outline: none; }
+  input[type=text]:focus, select:focus { border-color: var(--accent); }
+  input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; }
+  .colors { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .color { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+  .color input { width: 30px; height: 26px; border: 1px solid var(--line); border-radius: 6px; padding: 0; background: none; cursor: pointer; flex: none; }
+  .check { display: flex; align-items: center; gap: 8px; color: var(--muted); cursor: pointer; }
+  .check input { accent-color: var(--accent); }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  .note { color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .note code { background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; display: block;
+    margin-top: 6px; font: 11px/1.45 ui-monospace, Menlo, monospace; color: #e6d9ee; user-select: all; word-break: break-all; }
+  .foot { padding: 14px 16px 20px; display: flex; gap: 8px; }
+  .foot .btn { flex: 1; justify-content: center; }
+
+  @media (max-width: 900px) {
+    .app { grid-template-columns: 1fr; height: auto; }
+    .stage { padding: 12px 16px; }
+    .viewport { flex: none; aspect-ratio: 16 / 9; }
+    aside { border-left: 0; border-top: 1px solid var(--line); }
+    header .hide-sm { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="stage">
+    <header>
+      <div class="brand"><b>VHS</b> Title Builder</div>
+      <button class="btn hide-sm" id="pngBtn" title="Save the current frame as a 1920×1080 PNG">Save frame</button>
+      <button class="btn primary" id="recBtn" title="Record the full animation as a 1920×1080 video"><span class="dot"></span><span id="recLabel">Export video</span></button>
+    </header>
+    <div class="viewport" id="viewport"><canvas id="screen"></canvas></div>
+    <div class="transport">
+      <button class="btn icon" id="playBtn" title="Play / pause (Space)"></button>
+      <button class="btn icon" id="replayBtn" title="Replay from start">
+        <svg viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/></svg>
+      </button>
+      <input type="range" id="scrub" min="0" max="6" step="0.01" value="0" aria-label="Timeline">
+      <div class="time" id="time">0.00 / 6.00s</div>
+    </div>
+  </section>
+  <aside id="panel"></aside>
+</div>
+
+<input type="file" id="fontFile" accept=".ttf,.otf,.woff,.woff2" hidden>
+
+<script>
+(() => {
+'use strict';
+
+const W = 1920, H = 1080;
+const STORE_KEY = 'vhs-title-builder:v1';
+
+const FONTS = {
+  arialBlack: { label: 'Arial Black',        family: '"Arial Black", "Arial Bold", Gadget, Arial, sans-serif', weight: 900 },
+  impact:     { label: 'Impact',             family: 'Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif', weight: 400 },
+  helvetica:  { label: 'Helvetica Bold',     family: '"Helvetica Neue", Helvetica, Arial, sans-serif', weight: 800 },
+  futura:     { label: 'Futura',             family: 'Futura, "Century Gothic", "Trebuchet MS", sans-serif', weight: 800 },
+  verdana:    { label: 'Verdana Bold',       family: 'Verdana, Geneva, sans-serif', weight: 800 },
+  system:     { label: 'System Black',       family: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', weight: 900 },
+  georgia:    { label: 'Georgia (serif)',    family: 'Georgia, "Times New Roman", serif', weight: 700 },
+  courier:    { label: 'Courier (VCR)',      family: '"Courier New", Courier, monospace', weight: 700 },
+};
+
+const DEFAULTS = {
+  line1: 'Summer', line2: 'Memories', subtitle: 'July 1994  ·  Lake Tahoe',
+  font: 'arialBlack', uppercase: true,
+  titleSize: 220, letterSpacing: 6, lineHeight: 0.98, titleX: 0, titleY: 40,
+  subSize: 40, subSpacing: 16, subY: 250,
+  bgColor: '#07040a', textColor: '#ffcdea', glowColor: '#ff2f9e', glow2Color: '#8a3dff',
+  abColorA: '#ff4a14', abColorB: '#2266ff',
+  glow: 1.15, blur: 2, aberration: 7, scanlines: 0.5, grain: 0.35, distortion: 0.5,
+  flicker: 0.4, tracking: 0.45, vignette: 0.65,
+  duration: 6, intro: 2.4, loop: true, fadeOut: false,
+  format: '', fps: 30, bitrate: 20,
+};
+
+// Keys that only affect per-frame effects; everything else requires re-rasterising the text.
+const LIVE_KEYS = new Set(['aberration', 'scanlines', 'grain', 'distortion', 'flicker', 'tracking', 'vignette',
+  'duration', 'intro', 'loop', 'fadeOut', 'format', 'fps', 'bitrate', 'bgColor']);
+
+let S = load();
+
+function load() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
+    const merged = { ...DEFAULTS, ...saved };
+    if (!FONTS[merged.font]) merged.font = DEFAULTS.font;
+    return merged;
+  } catch { return { ...DEFAULTS }; }
+}
+function save() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch {}
+}
+
+/* ================================================================
+   Helpers
+   ================================================================ */
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const smooth = (a, b, x) => { x = clamp((x - a) / (b - a)); return x * x * (3 - 2 * x); };
+const hash = n => { const s = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return s - Math.floor(s); };
+function mk(w, h) {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h));
+  return c;
+}
+const hasLetterSpacing = 'letterSpacing' in CanvasRenderingContext2D.prototype;
+
+function lineWidth(c, str, sp) {
+  const chars = [...str];
+  if (hasLetterSpacing) { c.letterSpacing = sp + 'px'; return Math.max(0, c.measureText(str).width - (chars.length ? sp : 0)); }
+  let w = 0; for (const ch of chars) w += c.measureText(ch).width;
+  return w + sp * Math.max(0, chars.length - 1);
+}
+function drawLine(c, str, x, y, sp) {
+  if (hasLetterSpacing) { c.letterSpacing = sp + 'px'; c.fillText(str, x, y); return; }
+  let cx = x;
+  for (const ch of str) { c.fillText(ch, cx, y); cx += c.measureText(ch).width + sp; }
+}
+
+// Blur via an offset shadow: works in every browser, unlike ctx.filter.
+function blurPaint(c, paint, color, blur, alpha = 1) {
+  c.save();
+  c.globalAlpha = alpha;
+  if (blur < 0.5) { paint(c, color); c.restore(); return; }
+  const OFF = 30000;
+  c.shadowColor = color; c.shadowBlur = blur; c.shadowOffsetX = OFF;
+  c.translate(-OFF, 0);
+  paint(c, '#000');
+  c.restore();
+}
+
+/* ================================================================
+   Pre-rendered layers (rebuilt only when text/colour settings change)
+   ================================================================ */
+const canvas = document.getElementById('screen');
+canvas.width = W; canvas.height = H;
+const ctx = canvas.getContext('2d');
+
+let titleG = null, subG = null, haze = null, dirty = true;
+let customFontLabel = null;
+
+function fontSpec(size) {
+  if (S.font === 'custom' && customFontLabel) return `400 ${size}px "VHSCustomFont", sans-serif`;
+  const f = FONTS[S.font] || FONTS.arialBlack;
+  return `${f.weight} ${size}px ${f.family}`;
+}
+
+function buildGroup(lines, size, sp, lh, cx, cy) {
+  lines = lines.filter(l => l.trim().length);
+  if (!lines.length) return null;
+  const font = fontSpec(size);
+  const m = mk(1, 1).getContext('2d');
+  m.font = font;
+  const capH = m.measureText('H').actualBoundingBoxAscent || size * 0.72;
+  const widths = lines.map(l => lineWidth(m, l, sp));
+  const maxW = Math.max(...widths);
+  const gap = size * lh;
+  const blockH = capH + (lines.length - 1) * gap;
+  const pad = Math.ceil(size * 0.35 * Math.max(0.4, S.glow) + S.blur * 3 + 60);
+  const x0 = Math.floor(cx - maxW / 2 - pad);
+  const y0 = Math.floor(cy - blockH / 2 - pad);
+  const w = Math.ceil(maxW + pad * 2);
+  const h = Math.ceil(blockH + pad * 2 + size * 0.3);
+
+  const paint = (c, fill) => {
+    c.font = font; c.textBaseline = 'alphabetic'; c.textAlign = 'left'; c.fillStyle = fill;
+    lines.forEach((l, i) => drawLine(c, l, cx - widths[i] / 2 - x0, cy - blockH / 2 + capH + i * gap - y0, sp));
+  };
+  const layer = () => { const c = mk(w, h); return [c, c.getContext('2d')]; };
+
+  const [core, cc] = layer();
+  if (S.blur > 0.5) blurPaint(cc, paint, S.textColor, S.blur * 1.6, 0.9);
+  blurPaint(cc, paint, S.textColor, S.blur * 0.45, S.blur > 0.5 ? 0.85 : 1);
+
+  const [glow, gc] = layer();
+  const g = S.glow;
+  blurPaint(gc, paint, S.glow2Color, size * 0.4, clamp(g * 0.9));
+  blurPaint(gc, paint, S.glow2Color, size * 0.18, clamp(g * 0.6));
+  blurPaint(gc, paint, S.glowColor, size * 0.13, clamp(g));
+  blurPaint(gc, paint, S.glowColor, size * 0.045 + S.blur, clamp(g * 0.9));
+  if (g > 1) blurPaint(gc, paint, S.glowColor, size * 0.08, clamp(g - 1));
+
+  const [ghostA, ac] = layer();
+  blurPaint(ac, paint, S.abColorA, S.blur * 1.5 + 3, 0.95);
+  const [ghostB, bc] = layer();
+  blurPaint(bc, paint, S.abColorB, S.blur * 1.5 + 3, 0.95);
+
+  return { x: x0, y: y0, w, h, core, glow, ghostA, ghostB, scratch: mk(w, h) };
+}
+
+function rebuild() {
+  dirty = false;
+  const up = s => (S.uppercase ? s.toUpperCase() : s);
+  const cx = W / 2 + S.titleX, cy = H / 2 + S.titleY;
+  titleG = buildGroup([up(S.line1), up(S.line2)], S.titleSize, S.letterSpacing, S.lineHeight, cx, cy);
+  subG = buildGroup([up(S.subtitle)], S.subSize, S.subSpacing, 1.2, cx, S.subY);
+
+  // Faint coloured haze behind the title, like light bleeding through the tape.
+  haze = mk(W, H);
+  const hc = haze.getContext('2d');
+  const grad = hc.createRadialGradient(cx, cy, 0, cx, cy, W * 0.5);
+  grad.addColorStop(0, hexA(S.glow2Color, 0.3));
+  grad.addColorStop(0.45, hexA(S.glowColor, 0.09));
+  grad.addColorStop(1, hexA(S.glow2Color, 0));
+  hc.fillStyle = grad; hc.fillRect(0, 0, W, H);
+}
+
+function hexA(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+// Static overlays built once.
+const NOISE_W = 960, NOISE_H = 540;
+const noise = Array.from({ length: 6 }, () => {
+  const c = mk(NOISE_W, NOISE_H), x = c.getContext('2d');
+  const img = x.createImageData(NOISE_W, NOISE_H), d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const n = Math.random() * 255;
+    const cr = (Math.random() - 0.5) * 70, cb = (Math.random() - 0.5) * 70;   // chroma noise
+    d[i] = n + cr; d[i + 1] = n; d[i + 2] = n + cb; d[i + 3] = 255;
+  }
+  x.putImageData(img, 0, 0);
+  return c;
+});
+
+const scanPattern = (() => {
+  const c = mk(1, 4), x = c.getContext('2d');
+  x.fillStyle = 'rgba(0,0,0,0.35)'; x.fillRect(0, 1, 1, 1);
+  x.fillStyle = 'rgba(0,0,0,1)';    x.fillRect(0, 2, 1, 1);
+  x.fillStyle = 'rgba(0,0,0,0.35)'; x.fillRect(0, 3, 1, 1);
+  return ctx.createPattern(c, 'repeat');
+})();
+
+const vignette = (() => {
+  const c = mk(W, H), x = c.getContext('2d');
+  const g = x.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.62);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(0.6, 'rgba(0,0,0,0.45)');
+  g.addColorStop(1, 'rgba(0,0,0,0.95)');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  return c;
+})();
+
+/* ================================================================
+   Animation timeline
+   ================================================================ */
+// Everything is seeded by the time, so replays and recordings look identical.
+function groupState(t, delay, span, seed) {
+  const D = S.duration;
+  const I = Math.max(0.05, Math.min(S.intro, D));
+  const start = I * delay, len = I * span;
+  const p = clamp((t - start) / len);
+  const fi = Math.floor(t * 24);            // glitches update at ~24 Hz, like tape frames
+
+  let alpha = smooth(0, 0.55, p);
+  if (p < 0.8) {                             // signal drop-outs while locking on
+    const r = hash(fi * 1.13 + seed);
+    if (r < (1 - p / 0.8) * 0.6) alpha *= 0.12 + r;
+  }
+  let glitch = Math.pow(1 - smooth(0, 1, p), 1.6);
+
+  if (p >= 1) {                              // occasional tracking hiccups once settled
+    const win = Math.floor(t * 2);
+    if (hash(win * 5.17 + seed + 11) < 0.04 + 0.2 * S.distortion) {
+      const lt = t - win / 2, dur = 0.06 + hash(win + seed) * 0.16;
+      if (lt < dur) glitch = Math.max(glitch, (0.2 + 0.45 * hash(win * 2.3 + seed)) * S.distortion);
+    }
+  }
+
+  if (S.fadeOut) {
+    const fo = Math.min(1, D * 0.25);
+    const k = clamp((D - t) / fo);
+    if (k < 1) {
+      alpha *= k * (hash(fi * 3.7 + seed) < 0.3 * (1 - k) ? 0.3 : 1);
+      glitch = Math.max(glitch, (1 - k) * 0.7);
+    }
+  }
+
+  alpha *= 1 - S.flicker * 0.14 * hash(fi * 0.71 + seed + 4);
+  const amp = 0.3 + S.distortion;
+  return {
+    alpha, glitch, fi, seed,
+    ab: 1 + 4 * glitch,
+    dx: (hash(fi * 4.1 + seed + 5) - 0.5) * 2 * 150 * glitch * amp,
+    dy: (hash(fi * 6.3 + seed + 6) - 0.5) * 2 * 8 * glitch,
+    glow: (0.9 + 0.1 * Math.sin(t * 6.1 + seed) * (0.5 + S.flicker)) * (1 - 0.25 * glitch),
+  };
+}
+
+function glitchBands(g, st) {
+  const out = [];
+  if (st.glitch < 0.03 || S.distortion <= 0) return out;
+  const n = Math.round(1 + st.glitch * 7);
+  const { fi, seed } = st;
+  for (let i = 0; i < n; i++) {
+    if (hash(fi * 7.31 + i * 13.7 + seed) > st.glitch + 0.2) continue;
+    const y0 = g.y + hash(fi * 3.1 + i * 5.3 + seed + 1) * g.h;
+    const hgt = 4 + hash(fi * 1.7 + i * 9.1 + seed + 2) * (14 + st.glitch * 110);
+    const dx = (hash(fi * 2.9 + i * 4.7 + seed + 3) - 0.5) * 2 * (12 + st.glitch * 200) * (0.25 + S.distortion);
+    out.push({ y0, y1: y0 + hgt, dx });
+  }
+  return out;
+}
+
+/* ================================================================
+   Frame renderer
+   ================================================================ */
+function drawGroup(g, st, t, trackY) {
+  if (!g || st.alpha <= 0.003) return;
+  const s = g.scratch.getContext('2d');
+  s.globalCompositeOperation = 'source-over'; s.globalAlpha = 1;
+  s.clearRect(0, 0, g.w, g.h);
+  s.globalCompositeOperation = 'lighter';
+  const ab = S.aberration * st.ab;
+  s.globalAlpha = clamp(st.glow); s.drawImage(g.glow, 0, 0);
+  s.globalAlpha = 0.9;
+  s.drawImage(g.ghostA, -ab, -ab * 0.1);
+  s.drawImage(g.ghostB, ab, ab * 0.1);
+  s.globalAlpha = 1; s.drawImage(g.core, 0, 0);
+
+  // Paint into the frame in horizontal strips so each band can wobble / tear independently.
+  const bands = glitchBands(g, st);
+  const dist = S.distortion, band = 4;
+  ctx.save();
+  ctx.globalAlpha = clamp(st.alpha);
+  ctx.globalCompositeOperation = 'lighter';
+  let runStart = 0, runOff = null;
+  const flush = end => {
+    if (runOff === null || end <= runStart) return;
+    const hh = end - runStart;
+    ctx.drawImage(g.scratch, 0, runStart, g.w, hh, g.x + runOff, g.y + runStart + Math.round(st.dy), g.w, hh);
+  };
+  for (let y = 0; y < g.h; y += band) {
+    const gy = g.y + y;
+    let off = st.dx
+      + Math.sin(gy * 0.021 + t * 2.3) * 1.3 * dist
+      + Math.sin(gy * 0.0047 - t * 1.1) * 2.0 * dist;
+    for (const b of bands) if (gy >= b.y0 && gy < b.y1) off += b.dx;
+    const d = gy - trackY;
+    if (d > -60 && d < 60) off += (1 - Math.abs(d) / 60) * S.tracking * 16 * Math.sin(gy * 0.37 + t * 41);
+    off = Math.round(off);
+    if (off !== runOff) { flush(y); runStart = y; runOff = off; }
+  }
+  flush(g.h);
+  ctx.restore();
+}
+
+function render(t) {
+  if (dirty) rebuild();
+  const fi = Math.floor(t * 24);
+
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = S.bgColor;
+  ctx.fillRect(0, 0, W, H);
+
+  const ts = groupState(t, 0, 1, 1.7);
+  const ss = groupState(t, 0.3, 0.7, 9.3);
+
+  ctx.globalAlpha = clamp(S.glow) * clamp(ts.alpha) * 0.9;
+  ctx.drawImage(haze, 0, 0);
+  ctx.globalAlpha = 1;
+
+  const trackY = ((t * 0.09 + 0.35) % 1.5 - 0.25) * H;
+  drawGroup(subG, ss, t, trackY);
+  drawGroup(titleG, ts, t, trackY);
+
+  // Rolling tracking band.
+  if (S.tracking > 0) {
+    ctx.globalCompositeOperation = 'lighter';
+    const tg = ctx.createLinearGradient(0, trackY - 60, 0, trackY + 60);
+    tg.addColorStop(0, 'rgba(255,255,255,0)');
+    tg.addColorStop(0.5, `rgba(220,210,255,${0.045 * S.tracking})`);
+    tg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = tg; ctx.fillRect(0, trackY - 60, W, 120);
+    ctx.globalAlpha = 0.22 * S.tracking;
+    const k = noise[(Math.random() * noise.length) | 0];
+    ctx.drawImage(k, 0, Math.random() * (NOISE_H - 8), NOISE_W, 4, 0, trackY - 6, W, 12);
+    ctx.globalAlpha = 1;
+
+    // Head-switching noise along the bottom edge.
+    ctx.globalCompositeOperation = 'source-over';
+    const hb = 16;
+    ctx.drawImage(canvas, 0, H - hb, W, hb, 20 + Math.random() * 40 * S.tracking, H - hb - 2, W, hb);
+    ctx.globalAlpha = 0.55 * S.tracking;
+    ctx.drawImage(noise[(Math.random() * noise.length) | 0], 0, Math.random() * (NOISE_H - 10), NOISE_W, 6, 0, H - 12, W, 12);
+    ctx.globalAlpha = 1;
+  }
+
+  // Film / tape grain.
+  if (S.grain > 0) {
+    const k = noise[(Math.random() * noise.length) | 0];
+    const ox = Math.random() * 40, oy = Math.random() * 24;
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.globalAlpha = S.grain * 0.75;
+    ctx.drawImage(k, -ox, -oy, W + 40, H + 24);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = S.grain * 0.07;
+    ctx.drawImage(k, -ox, -oy, W + 40, H + 24);
+    // Rare white drop-out streaks.
+    if (Math.random() < 0.3 * S.grain) {
+      ctx.globalAlpha = 0.25 + Math.random() * 0.45;
+      ctx.fillStyle = '#fff';
+      const n = 1 + (Math.random() * 3) | 0;
+      for (let i = 0; i < n; i++) ctx.fillRect(Math.random() * W, Math.random() * H, 30 + Math.random() * 380, 1 + Math.random() * 1.5);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+
+  if (S.scanlines > 0) {
+    ctx.globalAlpha = S.scanlines * 0.6;
+    ctx.fillStyle = scanPattern;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  if (S.vignette > 0) {
+    ctx.globalAlpha = S.vignette;
+    ctx.drawImage(vignette, 0, 0);
+  }
+
+  if (S.flicker > 0) {
+    ctx.globalAlpha = S.flicker * (0.03 + 0.09 * hash(fi * 0.37 + 2));
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+    if (hash(fi * 0.91 + 3) < 0.05 * S.flicker) {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.04;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+/* ================================================================
+   Playback
+   ================================================================ */
+let time = 0, playing = true, last = performance.now();
+let recorder = null, recording = false, recCancelled = false;
+
+const playBtn = document.getElementById('playBtn');
+const replayBtn = document.getElementById('replayBtn');
+const scrub = document.getElementById('scrub');
+const timeEl = document.getElementById('time');
+const ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg>';
+const ICON_PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>';
+
+function setPlaying(v) { playing = v; playBtn.innerHTML = v ? ICON_PAUSE : ICON_PLAY; }
+
+function tick(now) {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  if (playing) {
+    time += dt;
+    if (time >= S.duration) {
+      if (recording) { time = S.duration; setPlaying(false); finishRecording(); }
+      else if (S.loop) time = time % S.duration;
+      else { time = S.duration; setPlaying(false); }
+    }
+  }
+  render(time);
+  updateTransport();
+  requestAnimationFrame(tick);
+}
+
+function updateTransport() {
+  scrub.max = S.duration;
+  if (document.activeElement !== scrub) scrub.value = time;
+  timeEl.textContent = `${recording ? '● REC  ' : ''}${time.toFixed(2)} / ${S.duration.toFixed(2)}s`;
+  timeEl.style.color = recording ? 'var(--rec)' : '';
+}
+
+playBtn.onclick = () => {
+  if (recording) return;
+  if (!playing && time >= S.duration) time = 0;
+  setPlaying(!playing);
+};
+replayBtn.onclick = () => { if (recording) return; time = 0; setPlaying(true); };
+scrub.oninput = () => { if (recording) return; setPlaying(false); time = +scrub.value; };
+document.addEventListener('keydown', e => {
+  if (e.code !== 'Space') return;
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' && e.target.type === 'text' || tag === 'select' || tag === 'button') return;
+  e.preventDefault(); playBtn.click();
+});
+
+// Fit the 16:9 canvas to the available space.
+const viewport = document.getElementById('viewport');
+new ResizeObserver(() => {
+  const r = viewport.getBoundingClientRect();
+  const w = Math.max(100, Math.min(r.width, r.height * 16 / 9));
+  canvas.style.width = w + 'px';
+  canvas.style.height = (w * 9 / 16) + 'px';
+}).observe(viewport);
+
+/* ================================================================
+   Export
+   ================================================================ */
+const FORMAT_CANDIDATES = [
+  ['video/mp4;codecs=avc1.640028', 'MP4 (H.264)'],
+  ['video/mp4;codecs=avc1', 'MP4 (H.264)'],
+  ['video/mp4', 'MP4'],
+  ['video/webm;codecs=vp9', 'WebM (VP9)'],
+  ['video/webm;codecs=vp8', 'WebM (VP8)'],
+  ['video/webm', 'WebM'],
+];
+const canRecord = typeof MediaRecorder !== 'undefined' && typeof canvas.captureStream === 'function';
+const formats = [];
+if (canRecord) {
+  const seen = new Set();
+  for (const [type, label] of FORMAT_CANDIDATES) {
+    const container = type.split(';')[0];
+    const generic = !type.includes('codecs');
+    try {
+      if (!MediaRecorder.isTypeSupported(type) || seen.has(label)) continue;
+      if (generic && formats.some(f => f.type.startsWith(container))) continue;   // already have a specific codec
+      seen.add(label); formats.push({ type, label });
+    } catch {}
+  }
+}
+if (!formats.some(f => f.type === S.format)) S.format = formats[0] ? formats[0].type : '';
+
+const recBtn = document.getElementById('recBtn');
+const recLabel = document.getElementById('recLabel');
+
+function stamp() {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+function download(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function startRecording() {
+  const type = S.format;
+  const stream = canvas.captureStream(+S.fps);
+  try {
+    recorder = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: S.bitrate * 1e6 });
+  } catch (err) {
+    stream.getTracks().forEach(tr => tr.stop());
+    alert('Could not start the recorder in this browser: ' + err.message);
+    return;
+  }
+  const chunks = [];
+  recCancelled = false;
+  recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  recorder.onstop = () => {
+    stream.getTracks().forEach(tr => tr.stop());
+    recording = false; recorder = null;
+    updateRecUI();
+    if (recCancelled || !chunks.length) return;
+    const ext = type.includes('mp4') ? 'mp4' : 'webm';
+    download(new Blob(chunks, { type: type.split(';')[0] }), `vhs-title-${stamp()}.${ext}`);
+  };
+  time = 0;
+  render(0);
+  last = performance.now();
+  recording = true;
+  setPlaying(true);
+  recorder.start(250);
+  updateRecUI();
+}
+function finishRecording() {
+  if (!recorder) return;
+  const r = recorder;
+  setTimeout(() => { if (r.state !== 'inactive') r.stop(); }, 200);   // hold the last frame briefly
+}
+function cancelRecording() {
+  if (!recorder) return;
+  recCancelled = true;
+  setPlaying(false);
+  recorder.stop();
+}
+function updateRecUI() {
+  recBtn.classList.toggle('recording', recording);
+  recBtn.classList.toggle('primary', !recording);
+  recLabel.textContent = recording ? 'Recording… (cancel)' : 'Export video';
+  recBtn.disabled = !formats.length;
+  replayBtn.disabled = playBtn.disabled = scrub.disabled = recording;
+}
+recBtn.onclick = () => (recording ? cancelRecording() : startRecording());
+
+document.getElementById('pngBtn').onclick = () => {
+  canvas.toBlob(b => b && download(b, `vhs-title-${stamp()}.png`), 'image/png');
+};
+
+/* ================================================================
+   Control panel
+   ================================================================ */
+const fontOptions = () => {
+  const o = Object.entries(FONTS).map(([v, f]) => [v, f.label]);
+  if (customFontLabel) o.push(['custom', 'Uploaded: ' + customFontLabel]);
+  return o;
+};
+
+const SECTIONS = [
+  { title: 'Text', open: true, items: [
+    { k: 'line1', type: 'text', label: 'Title — line 1' },
+    { k: 'line2', type: 'text', label: 'Title — line 2' },
+    { k: 'subtitle', type: 'text', label: 'Top text (date, place, subtitle)' },
+    { k: 'font', type: 'select', label: 'Font', options: fontOptions },
+    { type: 'fontUpload' },
+    { k: 'uppercase', type: 'check', label: 'Force uppercase' },
+  ] },
+  { title: 'Analog look', open: true, items: [
+    { k: 'glow', type: 'range', label: 'Glow', min: 0, max: 2, step: 0.01 },
+    { k: 'blur', type: 'range', label: 'Softness / blur', min: 0, max: 12, step: 0.1, unit: 'px' },
+    { k: 'aberration', type: 'range', label: 'Chromatic aberration', min: 0, max: 30, step: 0.5, unit: 'px' },
+    { k: 'scanlines', type: 'range', label: 'Scanlines', min: 0, max: 1, step: 0.01 },
+    { k: 'grain', type: 'range', label: 'Grain', min: 0, max: 1, step: 0.01 },
+    { k: 'distortion', type: 'range', label: 'Glitch distortion', min: 0, max: 1, step: 0.01 },
+    { k: 'flicker', type: 'range', label: 'Flicker', min: 0, max: 1, step: 0.01 },
+    { k: 'tracking', type: 'range', label: 'Tracking noise', min: 0, max: 1, step: 0.01 },
+    { k: 'vignette', type: 'range', label: 'Vignette', min: 0, max: 1, step: 0.01 },
+  ] },
+  { title: 'Layout', items: [
+    { k: 'titleSize', type: 'range', label: 'Title size', min: 60, max: 420, step: 1, unit: 'px' },
+    { k: 'letterSpacing', type: 'range', label: 'Title letter spacing', min: -20, max: 80, step: 1, unit: 'px' },
+    { k: 'lineHeight', type: 'range', label: 'Line spacing', min: 0.6, max: 1.6, step: 0.01 },
+    { k: 'titleX', type: 'range', label: 'Horizontal position', min: -700, max: 700, step: 1, unit: 'px' },
+    { k: 'titleY', type: 'range', label: 'Title vertical offset', min: -450, max: 450, step: 1, unit: 'px' },
+    { k: 'subSize', type: 'range', label: 'Top text size', min: 14, max: 140, step: 1, unit: 'px' },
+    { k: 'subSpacing', type: 'range', label: 'Top text letter spacing', min: -5, max: 80, step: 1, unit: 'px' },
+    { k: 'subY', type: 'range', label: 'Top text position (from top)', min: 30, max: 1050, step: 1, unit: 'px' },
+  ] },
+  { title: 'Colour', items: [
+    { type: 'colors', items: [
+      { k: 'textColor', label: 'Text' }, { k: 'bgColor', label: 'Background' },
+      { k: 'glowColor', label: 'Glow' }, { k: 'glow2Color', label: 'Outer glow' },
+      { k: 'abColorA', label: 'Fringe left' }, { k: 'abColorB', label: 'Fringe right' },
+    ] },
+  ] },
+  { title: 'Animation', open: true, items: [
+    { k: 'duration', type: 'range', label: 'Total duration', min: 2, max: 30, step: 0.5, unit: 's' },
+    { k: 'intro', type: 'range', label: 'Glitch-in length', min: 0.3, max: 10, step: 0.1, unit: 's' },
+    { k: 'loop', type: 'check', label: 'Loop preview' },
+    { k: 'fadeOut', type: 'check', label: 'Glitch out at the end' },
+  ] },
+  { title: 'Export', open: true, items: [{ type: 'export' }] },
+];
+
+const panel = document.getElementById('panel');
+const refreshers = [];
+
+function fmt(v, step) {
+  const dec = step >= 1 ? 0 : step >= 0.1 ? 1 : 2;
+  return (+v).toFixed(dec);
+}
+
+function set(k, v) {
+  S[k] = v;
+  if (!LIVE_KEYS.has(k)) dirty = true;
+  if (k === 'duration' && time > v) time = v;
+  save();
+}
+
+function el(tag, props = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [a, v] of Object.entries(props)) {
+    if (a === 'class') n.className = v; else if (a in n) n[a] = v; else n.setAttribute(a, v);
+  }
+  for (const k of kids) if (k != null) n.append(k);
+  return n;
+}
+
+function buildControl(it) {
+  if (it.type === 'text') {
+    const inp = el('input', { type: 'text', value: S[it.k], spellcheck: false });
+    inp.oninput = () => set(it.k, inp.value);
+    refreshers.push(() => { inp.value = S[it.k]; });
+    return el('label', { class: 'field' }, el('div', { class: 'top' }, it.label), inp);
+  }
+  if (it.type === 'range') {
+    const out = el('output');
+    const inp = el('input', { type: 'range', min: it.min, max: it.max, step: it.step, value: S[it.k] });
+    const show = () => { out.textContent = fmt(S[it.k], it.step) + (it.unit || ''); };
+    inp.oninput = () => { set(it.k, +inp.value); show(); };
+    refreshers.push(() => { inp.value = S[it.k]; show(); });
+    show();
+    return el('label', { class: 'field' }, el('div', { class: 'top' }, el('span', {}, it.label), out), inp);
+  }
+  if (it.type === 'select') {
+    const sel = el('select');
+    const fill = () => {
+      sel.innerHTML = '';
+      for (const [v, l] of it.options()) sel.append(el('option', { value: v, textContent: l }));
+      sel.value = S[it.k];
+    };
+    sel.onchange = () => set(it.k, sel.value);
+    refreshers.push(fill);
+    fill();
+    return el('label', { class: 'field' }, el('div', { class: 'top' }, it.label), sel);
+  }
+  if (it.type === 'check') {
+    const inp = el('input', { type: 'checkbox', checked: !!S[it.k] });
+    inp.onchange = () => set(it.k, inp.checked);
+    refreshers.push(() => { inp.checked = !!S[it.k]; });
+    return el('label', { class: 'check' }, inp, it.label);
+  }
+  if (it.type === 'colors') {
+    const wrap = el('div', { class: 'colors' });
+    for (const c of it.items) {
+      const inp = el('input', { type: 'color', value: S[c.k] });
+      inp.oninput = () => set(c.k, inp.value);
+      refreshers.push(() => { inp.value = S[c.k]; });
+      wrap.append(el('label', { class: 'color' }, inp, c.label));
+    }
+    return wrap;
+  }
+  if (it.type === 'fontUpload') {
+    const btn = el('button', { class: 'btn', type: 'button', textContent: 'Load a font file (.ttf / .otf / .woff)…' });
+    btn.onclick = () => fontFile.click();
+    return btn;
+  }
+  if (it.type === 'export') return buildExport();
+}
+
+function buildExport() {
+  const box = el('div', { class: 'body', style: 'padding:0' });
+  if (!formats.length) {
+    box.append(el('div', { class: 'note', textContent:
+      'This browser cannot record canvas video (MediaRecorder is unavailable). Open this file in a current version of Chrome, Edge, Firefox or Safari to export video. "Save frame" still works.' }));
+    return box;
+  }
+  const fmtSel = el('select');
+  for (const f of formats) fmtSel.append(el('option', { value: f.type, textContent: f.label }));
+  fmtSel.value = S.format;
+
+  const fpsSel = el('select');
+  for (const v of [24, 30, 60]) fpsSel.append(el('option', { value: v, textContent: v + ' fps' }));
+  fpsSel.value = S.fps;
+
+  const brSel = el('select');
+  for (const [v, l] of [[8, 'Standard · 8 Mbps'], [20, 'High · 20 Mbps'], [40, 'Max · 40 Mbps']]) brSel.append(el('option', { value: v, textContent: l }));
+  brSel.value = S.bitrate;
+
+  const note = el('div', { class: 'note' });
+  const updateNote = () => {
+    const isWebm = S.format.includes('webm');
+    const hasMp4 = formats.some(f => f.type.includes('mp4'));
+    note.innerHTML = '';
+    note.append(`Records the full ${S.duration.toFixed(1)}s animation in real time at 1920 × 1080. Keep this tab visible while it records.`);
+    if (isWebm) {
+      note.append(el('br'), el('br'),
+        hasMp4 ? 'MP4 is also available in the format menu above. ' : 'This browser can only record WebM. ',
+        'To convert WebM to MP4, install ffmpeg and run:',
+        el('code', { textContent: 'ffmpeg -i vhs-title.webm -c:v libx264 -pix_fmt yuv420p -crf 16 -r 30 vhs-title.mp4' }));
+    }
+  };
+  fmtSel.onchange = () => { set('format', fmtSel.value); updateNote(); };
+  fpsSel.onchange = () => set('fps', +fpsSel.value);
+  brSel.onchange = () => set('bitrate', +brSel.value);
+  refreshers.push(updateNote);
+  updateNote();
+
+  box.append(
+    el('label', { class: 'field' }, el('div', { class: 'top' }, 'Format'), fmtSel),
+    el('div', { class: 'row' },
+      el('label', { class: 'field' }, el('div', { class: 'top' }, 'Frame rate'), fpsSel),
+      el('label', { class: 'field' }, el('div', { class: 'top' }, 'Quality'), brSel)),
+    note);
+  return box;
+}
+
+for (const sec of SECTIONS) {
+  const body = el('div', { class: 'body' });
+  for (const it of sec.items) body.append(buildControl(it));
+  panel.append(el('details', { open: !!sec.open }, el('summary', {}, sec.title), body));
+}
+const resetBtn = el('button', { class: 'btn', type: 'button', textContent: 'Reset to defaults' });
+resetBtn.onclick = () => {
+  const keep = { format: S.format, fps: S.fps, bitrate: S.bitrate };
+  S = { ...DEFAULTS, ...keep };
+  save(); dirty = true;
+  refreshers.forEach(f => f());
+  time = 0; setPlaying(true);
+};
+panel.append(el('div', { class: 'foot' }, resetBtn));
+
+const fontFile = document.getElementById('fontFile');
+fontFile.onchange = async () => {
+  const file = fontFile.files[0];
+  if (!file) return;
+  try {
+    const face = new FontFace('VHSCustomFont', await file.arrayBuffer());
+    await face.load();
+    document.fonts.add(face);
+    customFontLabel = file.name.replace(/\.[^.]+$/, '');
+    S.font = 'custom'; dirty = true;   // not saved: uploaded fonts don't persist across reloads
+    refreshers.forEach(f => f());
+  } catch (err) {
+    alert('Could not load that font file: ' + err.message);
+  }
+  fontFile.value = '';
+};
+
+/* ================================================================
+   Go
+   ================================================================ */
+setPlaying(true);
+updateRecUI();
+(document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(() => { dirty = true; });
+requestAnimationFrame(t => { last = t; requestAnimationFrame(tick); });
+
+// Small hook for automated testing.
+window.__vhs = { render, get settings() { return S; }, seek: v => { time = v; setPlaying(false); }, formats };
+})();
+</script>
+</body>
+</html>
