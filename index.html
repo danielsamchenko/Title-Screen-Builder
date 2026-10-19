@@ -360,7 +360,7 @@ function groupState(t, delay, span, seed) {
 /* ================================================================
    Frame renderer
    ================================================================ */
-function drawGroup(g, st) {
+function drawGroup(g, st, trackY, fi) {
   if (!g || st.alpha <= 0.003) return;
   const s = g.scratch.getContext('2d');
   s.globalCompositeOperation = 'source-over'; s.globalAlpha = 1;
@@ -373,11 +373,29 @@ function drawGroup(g, st) {
   s.drawImage(g.ghostB, ab, ab * 0.1);
   s.globalAlpha = st.core; s.drawImage(g.core, 0, 0);
 
-  // The whole block moves as one piece (shake + roll); no per-line bending.
+  // The block moves as one piece (shake + roll). Only where the rolling tracking
+  // band crosses it do lines get dragged sideways, like a tape tracking error.
   ctx.save();
   ctx.globalAlpha = clamp(st.alpha);
   ctx.globalCompositeOperation = 'lighter';
-  ctx.drawImage(g.scratch, g.x + Math.round(st.dx), g.y + Math.round(st.dy));
+  const x = g.x + Math.round(st.dx), y = g.y + Math.round(st.dy);
+  const HALF = 34;
+  const top = clamp(Math.round(trackY - HALF - y), 0, g.h);
+  const bot = clamp(Math.round(trackY + HALF - y), 0, g.h);
+  if (S.tracking <= 0 || bot <= top) {
+    ctx.drawImage(g.scratch, x, y);
+  } else {
+    if (top > 0) ctx.drawImage(g.scratch, 0, 0, g.w, top, x, y, g.w, top);
+    if (bot < g.h) ctx.drawImage(g.scratch, 0, bot, g.w, g.h - bot, x, y + bot, g.w, g.h - bot);
+    const row = 2;
+    for (let r = top; r < bot; r += row) {
+      const hh = Math.min(row, bot - r);
+      const f = 1 - Math.abs(y + r - trackY) / HALF;          // strongest in the band's centre
+      const jag = hash(fi * 3.3 + Math.floor((y + r) / row) * 0.71);
+      const off = Math.round(f * S.tracking * (14 + 30 * jag * jag));
+      ctx.drawImage(g.scratch, 0, r, g.w, hh, x + off, y + r, g.w, hh);
+    }
+  }
   ctx.restore();
 }
 
@@ -398,8 +416,8 @@ function render(t) {
   ctx.globalAlpha = 1;
 
   const trackY = ((t * 0.09 + 0.35) % 1.5 - 0.25) * H;
-  drawGroup(subG, ss);
-  drawGroup(titleG, ts);
+  drawGroup(subG, ss, trackY, fi);
+  drawGroup(titleG, ts, trackY, fi);
 
   // Rolling tracking band.
   if (S.tracking > 0) {
