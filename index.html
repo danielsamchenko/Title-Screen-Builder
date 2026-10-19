@@ -348,26 +348,13 @@ function groupState(t, delay, span, seed) {
   const amp = 0.3 + S.distortion;
   return {
     alpha, glitch, fi, seed,
-    ab: 1 + 4 * glitch,
-    dx: (hash(fi * 4.1 + seed + 5) - 0.5) * 2 * 150 * glitch * amp,
-    dy: (hash(fi * 6.3 + seed + 6) - 0.5) * 2 * 8 * glitch,
-    glow: (0.9 + 0.1 * Math.sin(t * 6.1 + seed) * (0.5 + S.flicker)) * (1 - 0.25 * glitch),
+    // Analog "locking on": a small shake, a vertical roll that settles, and the text
+    // emerging from its own bloom. No RGB split boost and no hard slice tearing.
+    dx: (hash(fi * 4.1 + seed + 5) - 0.5) * 2 * 6 * glitch * amp,
+    dy: (hash(fi * 6.3 + seed + 6) - 0.5) * 2 * 4 * glitch - Math.pow(1 - smooth(0, 1, p), 2) * 26,
+    core: 1 - 0.55 * glitch,
+    glow: (0.9 + 0.1 * Math.sin(t * 6.1 + seed) * (0.5 + S.flicker)) * (1 + 0.35 * glitch),
   };
-}
-
-function glitchBands(g, st) {
-  const out = [];
-  if (st.glitch < 0.03 || S.distortion <= 0) return out;
-  const n = Math.round(1 + st.glitch * 7);
-  const { fi, seed } = st;
-  for (let i = 0; i < n; i++) {
-    if (hash(fi * 7.31 + i * 13.7 + seed) > st.glitch + 0.2) continue;
-    const y0 = g.y + hash(fi * 3.1 + i * 5.3 + seed + 1) * g.h;
-    const hgt = 4 + hash(fi * 1.7 + i * 9.1 + seed + 2) * (14 + st.glitch * 110);
-    const dx = (hash(fi * 2.9 + i * 4.7 + seed + 3) - 0.5) * 2 * (12 + st.glitch * 200) * (0.25 + S.distortion);
-    out.push({ y0, y1: y0 + hgt, dx });
-  }
-  return out;
 }
 
 /* ================================================================
@@ -379,15 +366,15 @@ function drawGroup(g, st, t, trackY) {
   s.globalCompositeOperation = 'source-over'; s.globalAlpha = 1;
   s.clearRect(0, 0, g.w, g.h);
   s.globalCompositeOperation = 'lighter';
-  const ab = S.aberration * st.ab;
+  const ab = S.aberration;
   s.globalAlpha = clamp(st.glow); s.drawImage(g.glow, 0, 0);
   s.globalAlpha = 0.9;
   s.drawImage(g.ghostA, -ab, -ab * 0.1);
   s.drawImage(g.ghostB, ab, ab * 0.1);
-  s.globalAlpha = 1; s.drawImage(g.core, 0, 0);
+  s.globalAlpha = st.core; s.drawImage(g.core, 0, 0);
 
-  // Paint into the frame in horizontal strips so each band can wobble / tear independently.
-  const bands = glitchBands(g, st);
+  // Paint into the frame in horizontal strips so the tape can bend smoothly line by line.
+  const amp = 0.3 + S.distortion;
   const dist = S.distortion, band = 4;
   ctx.save();
   ctx.globalAlpha = clamp(st.alpha);
@@ -403,9 +390,12 @@ function drawGroup(g, st, t, trackY) {
     let off = st.dx
       + Math.sin(gy * 0.021 + t * 2.3) * 1.3 * dist
       + Math.sin(gy * 0.0047 - t * 1.1) * 2.0 * dist;
-    for (const b of bands) if (gy >= b.y0 && gy < b.y1) off += b.dx;
+    if (st.glitch > 0.01) {                // smooth tape-stretch waves rather than hard tears
+      off += st.glitch * amp * (34 * Math.sin(gy * 0.011 + t * 7.3 + st.seed)
+                              + 9 * Math.sin(gy * 0.043 - t * 13.1 + st.seed * 2));
+    }
     const d = gy - trackY;
-    if (d > -60 && d < 60) off += (1 - Math.abs(d) / 60) * S.tracking * 16 * Math.sin(gy * 0.37 + t * 41);
+    if (d > -60 && d < 60) off += (1 - Math.abs(d) / 60) * S.tracking * 12 * Math.sin(gy * 0.07 + t * 23);
     off = Math.round(off);
     if (off !== runOff) { flush(y); runStart = y; runOff = off; }
   }
@@ -460,7 +450,7 @@ function render(t) {
     const k = noise[(Math.random() * noise.length) | 0];
     const ox = Math.random() * 40, oy = Math.random() * 24;
     ctx.globalCompositeOperation = 'overlay';
-    ctx.globalAlpha = S.grain * 0.75;
+    ctx.globalAlpha = Math.min(1, S.grain * (0.75 + 0.6 * ts.glitch));
     ctx.drawImage(k, -ox, -oy, W + 40, H + 24);
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = S.grain * 0.07;
