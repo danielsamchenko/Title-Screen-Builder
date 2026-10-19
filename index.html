@@ -360,7 +360,7 @@ function groupState(t, delay, span, seed) {
 /* ================================================================
    Frame renderer
    ================================================================ */
-function drawGroup(g, st, t, trackY) {
+function drawGroup(g, st) {
   if (!g || st.alpha <= 0.003) return;
   const s = g.scratch.getContext('2d');
   s.globalCompositeOperation = 'source-over'; s.globalAlpha = 1;
@@ -373,33 +373,11 @@ function drawGroup(g, st, t, trackY) {
   s.drawImage(g.ghostB, ab, ab * 0.1);
   s.globalAlpha = st.core; s.drawImage(g.core, 0, 0);
 
-  // Paint into the frame in horizontal strips so the tape can bend smoothly line by line.
-  const amp = 0.3 + S.distortion;
-  const dist = S.distortion, band = 4;
+  // The whole block moves as one piece (shake + roll); no per-line bending.
   ctx.save();
   ctx.globalAlpha = clamp(st.alpha);
   ctx.globalCompositeOperation = 'lighter';
-  let runStart = 0, runOff = null;
-  const flush = end => {
-    if (runOff === null || end <= runStart) return;
-    const hh = end - runStart;
-    ctx.drawImage(g.scratch, 0, runStart, g.w, hh, g.x + runOff, g.y + runStart + Math.round(st.dy), g.w, hh);
-  };
-  for (let y = 0; y < g.h; y += band) {
-    const gy = g.y + y;
-    let off = st.dx
-      + Math.sin(gy * 0.021 + t * 2.3) * 1.3 * dist
-      + Math.sin(gy * 0.0047 - t * 1.1) * 2.0 * dist;
-    if (st.glitch > 0.01) {                // smooth tape-stretch waves rather than hard tears
-      off += st.glitch * amp * (34 * Math.sin(gy * 0.011 + t * 7.3 + st.seed)
-                              + 9 * Math.sin(gy * 0.043 - t * 13.1 + st.seed * 2));
-    }
-    const d = gy - trackY;
-    if (d > -60 && d < 60) off += (1 - Math.abs(d) / 60) * S.tracking * 12 * Math.sin(gy * 0.07 + t * 23);
-    off = Math.round(off);
-    if (off !== runOff) { flush(y); runStart = y; runOff = off; }
-  }
-  flush(g.h);
+  ctx.drawImage(g.scratch, g.x + Math.round(st.dx), g.y + Math.round(st.dy));
   ctx.restore();
 }
 
@@ -420,8 +398,8 @@ function render(t) {
   ctx.globalAlpha = 1;
 
   const trackY = ((t * 0.09 + 0.35) % 1.5 - 0.25) * H;
-  drawGroup(subG, ss, t, trackY);
-  drawGroup(titleG, ts, t, trackY);
+  drawGroup(subG, ss);
+  drawGroup(titleG, ts);
 
   // Rolling tracking band.
   if (S.tracking > 0) {
