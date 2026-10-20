@@ -110,6 +110,7 @@
       <button class="btn icon" id="replayBtn" title="Replay from start">
         <svg viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/></svg>
       </button>
+      <button class="btn icon" id="muteBtn" title="Sound on / off (preview only)"></button>
       <input type="range" id="scrub" min="0" max="6" step="0.01" value="0" aria-label="Timeline">
       <div class="time" id="time">0.00 / 6.00s</div>
     </div>
@@ -165,10 +166,12 @@ const DEFAULTS = {
   flicker: 0.5, tracking: 0.7, vignette: 0.7,
   duration: 6, intro: 2.4, loop: true, fadeOut: false,
   format: '', fps: 30, bitrate: 20,
+  audioOn: true, audioExport: true,
+  volMaster: 0.8, volHiss: 0.5, volStatic: 0.6, volGlitch: 0.6, volBeep: 0.5, volTv: 0.7,
 };
 
 // Keys that only affect per-frame effects; everything else requires re-rasterising the text.
-const LIVE_KEYS = new Set(['smear', 'aberration', 'scanlines', 'grain', 'distortion', 'flicker', 'tracking', 'vignette',
+const LIVE_KEYS = new Set(['audioOn', 'audioExport', 'volMaster', 'volHiss', 'volStatic', 'volGlitch', 'volBeep', 'volTv', 'smear', 'aberration', 'scanlines', 'grain', 'distortion', 'flicker', 'tracking', 'vignette',
   'duration', 'intro', 'loop', 'fadeOut', 'format', 'fps', 'bitrate', 'bgColor']);
 
 let S = load();
@@ -230,6 +233,7 @@ canvas.width = W; canvas.height = H;
 const ctx = canvas.getContext('2d');
 
 let titleG = null, subG = null, haze = null, dirty = true;
+let frameSound = { intro: 0, hic: 0, fade: 0, track: 0, fi: 0 };
 let customFontLabel = null;
 
 function fontSpec(size) {
@@ -288,7 +292,7 @@ function buildGroup(lines, size, sp, lh, cx, cy) {
     sm.drawImage(glow, -reach * k * 0.5, 0);
   }
 
-  return { x: x0, y: y0, w, h, core, glow, ghostA, ghostB, smear, scratch: mk(w, h) };
+  return { x: x0, y: y0, w, h, cy, half: blockH / 2, core, glow, ghostA, ghostB, smear, scratch: mk(w, h) };
 }
 
 function rebuild() {
@@ -362,12 +366,14 @@ function groupState(t, delay, span, seed) {
     if (r < (1 - p / 0.8) * 0.6) alpha *= 0.12 + r;
   }
   let glitch = Math.pow(1 - smooth(0, 1, p), 1.6);
+  const intro = glitch;
+  let hic = 0, fade = 0;
 
   if (p >= 1) {                              // occasional tracking hiccups once settled
     const win = Math.floor(t * 2);
     if (hash(win * 5.17 + seed + 11) < 0.04 + 0.2 * S.distortion) {
       const lt = t - win / 2, dur = 0.06 + hash(win + seed) * 0.16;
-      if (lt < dur) glitch = Math.max(glitch, (0.2 + 0.45 * hash(win * 2.3 + seed)) * S.distortion);
+      if (lt < dur) { hic = (0.2 + 0.45 * hash(win * 2.3 + seed)) * S.distortion; glitch = Math.max(glitch, hic); }
     }
   }
 
@@ -376,14 +382,15 @@ function groupState(t, delay, span, seed) {
     const k = clamp((D - t) / fo);
     if (k < 1) {
       alpha *= k * (hash(fi * 3.7 + seed) < 0.3 * (1 - k) ? 0.3 : 1);
-      glitch = Math.max(glitch, (1 - k) * 0.7);
+      fade = 1 - k;
+      glitch = Math.max(glitch, fade * 0.7);
     }
   }
 
   alpha *= 1 - S.flicker * 0.14 * hash(fi * 0.71 + seed + 4);
   const amp = 0.3 + S.distortion;
   return {
-    alpha, glitch, fi, seed,
+    alpha, glitch, fi, seed, intro, hic, fade,
     // Analog "locking on": a small shake, a vertical roll that settles, and the text
     // emerging from its own bloom. No RGB split boost and no hard slice tearing.
     dx: (hash(fi * 4.1 + seed + 5) - 0.5) * 2 * 6 * glitch * amp,
@@ -456,6 +463,11 @@ function render(t) {
   drawGroup(subG, ss, trackY, fi);
   drawGroup(titleG, ts, trackY, fi);
 
+  // What the soundtrack follows this frame.
+  let track = 0;
+  if (titleG && S.tracking > 0) track = clamp(1 - Math.abs(trackY - titleG.cy) / (titleG.half + 40)) * clamp(ts.alpha * 2);
+  frameSound = { intro: ts.intro, hic: ts.hic, fade: ts.fade, track, fi };
+
   // Rolling tracking band.
   if (S.tracking > 0) {
     ctx.globalCompositeOperation = 'lighter';
@@ -527,6 +539,150 @@ function render(t) {
 }
 
 /* ================================================================
+   Sound: everything is synthesised with Web Audio, no sample files.
+   ================================================================ */
+const Sound = (() => {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  let ac = null, n = null;
+
+  function ensure() {
+    if (!ac) build();
+    if (ac.state === 'suspended') ac.resume();
+    return ac;
+  }
+
+  function build() {
+    ac = new AC();
+    const len = ac.sampleRate * 2;
+    const noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+
+    const master = ac.createGain();
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.ratio.value = 6; comp.attack.value = 0.003; comp.release.value = 0.2;
+    const monitor = ac.createGain();
+    const dest = ac.createMediaStreamDestination ? ac.createMediaStreamDestination() : null;
+    master.connect(comp); comp.connect(monitor); monitor.connect(ac.destination);
+    if (dest) comp.connect(dest);
+
+    const filter = (type, freq, q = 0.7) => { const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q; return f; };
+    const gain = (v = 0) => { const g = ac.createGain(); g.gain.value = v; return g; };
+    const loopNoise = () => { const s = ac.createBufferSource(); s.buffer = noiseBuf; s.loop = true; s.start(0, Math.random() * 2); return s; };
+    const chain = (...nodes) => { for (let i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i + 1]); return nodes[nodes.length - 1]; };
+
+    // Tape hiss + mains hum (continuous while playing).
+    const hiss = gain();
+    chain(loopNoise(), filter('highpass', 2200), filter('lowpass', 11000), hiss);
+    const hum = ac.createOscillator(); hum.frequency.value = 60;
+    const hum3 = ac.createOscillator(); hum3.frequency.value = 180;
+    const humG = gain(0.18), hum3G = gain(0.05);
+    hum.connect(humG); hum3.connect(hum3G); humG.connect(hiss); hum3G.connect(hiss);
+    hum.start(); hum3.start();
+    hiss.connect(master);
+
+    // Static rush (follows the glitch-in and glitch-out).
+    const stat = gain();
+    chain(loopNoise(), filter('bandpass', 3200, 0.4), stat, master);
+
+    // Tracking glitch: warbling band-passed noise plus a rough 59 Hz buzz.
+    const glitch = gain();
+    const gbp = filter('bandpass', 900, 3);
+    chain(loopNoise(), gbp, glitch);
+    const lfo = ac.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 11;
+    const lfoG = gain(500); lfo.connect(lfoG); lfoG.connect(gbp.frequency); lfo.start();
+    const buzz = ac.createOscillator(); buzz.type = 'sawtooth'; buzz.frequency.value = 59;
+    chain(buzz, filter('lowpass', 1400), gain(0.35), glitch);
+    buzz.start();
+    glitch.connect(master);
+
+    n = { master, monitor, dest, hiss, stat, glitch, noiseBuf, filter, gain };
+  }
+
+  // One-shot helpers.
+  function env(g, at, attack, peak, decay) {
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(peak, at + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + attack + decay);
+  }
+  function burst(at, dur, peak, type, freq, q = 0.7, attack = 0.002) {
+    const s = ac.createBufferSource(); s.buffer = n.noiseBuf;
+    const g = n.gain();
+    s.connect(n.filter(type, freq, q)).connect(g).connect(n.master);
+    env(g, at, attack, peak, dur);
+    s.start(at, Math.random() * 1.5); s.stop(at + attack + dur + 0.05);
+  }
+  function tone(at, type, f0, f1, attack, peak, decay) {
+    const o = ac.createOscillator(); o.type = type;
+    o.frequency.setValueAtTime(f0, at);
+    if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, at + attack + decay);
+    const g = n.gain();
+    o.connect(g).connect(n.master);
+    env(g, at, attack, peak, decay);
+    o.start(at); o.stop(at + attack + decay + 0.05);
+  }
+  const ready = () => ac && ac.state === 'running';
+
+  return {
+    ensure,
+    // Audio track for the exporter (null if unsupported).
+    track() { ensure(); return n.dest ? n.dest.stream.getAudioTracks()[0] || null : null; },
+
+    // Called every frame with what the picture is doing.
+    update(fs, isPlaying) {
+      if (!ready()) return;
+      const now = ac.currentTime, on = isPlaying ? 1 : 0;
+      n.monitor.gain.setTargetAtTime(S.audioOn ? 1 : 0, now, 0.02);
+      n.master.gain.setTargetAtTime(S.volMaster, now, 0.03);
+      n.hiss.gain.setTargetAtTime(on * S.volHiss * 0.09, now, 0.05);
+      const crackle = 0.55 + 0.45 * hash(fs.fi * 2.71 + 5);
+      n.stat.gain.setTargetAtTime(on * S.volStatic * 0.42 * clamp(fs.intro * 1.1 + fs.fade) * crackle, now, 0.015);
+      const g = clamp(fs.hic * 1.6 + fs.track * S.tracking * 0.9 + fs.fade * 0.5);
+      n.glitch.gain.setTargetAtTime(on * S.volGlitch * 0.5 * g * (0.4 + 0.6 * hash(fs.fi * 1.37 + 9)), now, 0.01);
+    },
+
+    // CRT power-on: relay click, degauss thunk, flyback whine, static rush.
+    tvOn() {
+      if (!ready() || S.volTv <= 0) return;
+      const t = ac.currentTime + 0.01, v = S.volTv;
+      burst(t, 0.02, 0.7 * v, 'highpass', 1800);
+      tone(t + 0.01, 'sine', 70, 42, 0.01, 0.55 * v, 0.9);
+      tone(t + 0.01, 'triangle', 120, 90, 0.01, 0.12 * v, 0.6);
+      tone(t + 0.05, 'sine', 15200, 15200, 0.15, 0.025 * v, 1.6);
+      burst(t + 0.03, 0.9, 0.38 * v, 'bandpass', 3000, 0.5, 0.03);
+    },
+    // CRT power-off: pop, collapsing tone, short static.
+    tvOff() {
+      if (!ready() || S.volTv <= 0) return;
+      const t = ac.currentTime + 0.01, v = S.volTv;
+      burst(t, 0.015, 0.6 * v, 'highpass', 1500);
+      tone(t, 'sine', 1800, 45, 0.005, 0.3 * v, 0.32);
+      burst(t, 0.18, 0.25 * v, 'bandpass', 2500, 0.6);
+    },
+    // Camcorder "recording" double beep.
+    beep() {
+      if (!ready() || S.volBeep <= 0) return;
+      const t = ac.currentTime + 0.01, v = S.volBeep;
+      tone(t, 'triangle', 2950, 2950, 0.004, 0.22 * v, 0.07);
+      tone(t + 0.16, 'triangle', 2950, 2950, 0.004, 0.22 * v, 0.07);
+    },
+  };
+})();
+
+// Timed one-shot sounds on the animation timeline.
+function soundEvents(from, to) {
+  if (!Sound) return;
+  const D = S.duration;
+  const events = [[0, 'tvOn'], [0.12, 'beep']];
+  if (S.fadeOut) events.push([Math.max(0, D - 0.3), 'tvOff']);
+  for (const [at, name] of events) if (at >= from && at < to) Sound[name]();
+}
+
+// Browsers only allow sound after a click or key press.
+if (Sound) for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, () => Sound.ensure(), true);
+
+/* ================================================================
    Playback
    ================================================================ */
 let time = 0, playing = true, last = performance.now();
@@ -541,18 +697,30 @@ const ICON_PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z
 
 function setPlaying(v) { playing = v; playBtn.innerHTML = v ? ICON_PAUSE : ICON_PLAY; }
 
+const muteBtn = document.getElementById('muteBtn');
+const ICON_SOUND = '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9zM16 8.5a5 5 0 0 1 0 7l-1.4-1.4a3 3 0 0 0 0-4.2zM18.4 6a8.5 8.5 0 0 1 0 12L17 16.6a6.5 6.5 0 0 0 0-9.2z"/></svg>';
+const ICON_MUTED = '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9zM16 9.4l1.4-1.4 2.1 2.1 2.1-2.1L23 9.4l-2.1 2.1 2.1 2.1-1.4 1.4-2.1-2.1-2.1 2.1-1.4-1.4 2.1-2.1z"/></svg>';
+function updateMute() { muteBtn.innerHTML = S.audioOn ? ICON_SOUND : ICON_MUTED; muteBtn.style.color = S.audioOn ? '' : 'var(--muted)'; }
+muteBtn.onclick = () => { S.audioOn = !S.audioOn; save(); updateMute(); refreshers.forEach(f => f()); };
+if (!Sound) muteBtn.hidden = true;
+
 function tick(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (playing) {
+    const prev = time;
     time += dt;
     if (time >= S.duration) {
+      soundEvents(prev, S.duration + 1);
       if (recording) { time = S.duration; setPlaying(false); finishRecording(); }
-      else if (S.loop) time = time % S.duration;
+      else if (S.loop) { time = time % S.duration; soundEvents(0, time); }
       else { time = S.duration; setPlaying(false); }
+    } else {
+      soundEvents(prev, time);
     }
   }
   render(time);
+  if (Sound) Sound.update(frameSound, playing);
   updateTransport();
   requestAnimationFrame(tick);
 }
@@ -629,13 +797,29 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
+// Pick a container/codec string that also carries an audio track.
+function withAudio(type) {
+  const isMp4 = type.startsWith('video/mp4');
+  const m = type.match(/codecs=([^;]+)/);
+  const v = m ? m[1] : (isMp4 ? 'avc1' : 'vp9');
+  const base = type.split(';')[0];
+  const tries = isMp4 ? [`${base};codecs=${v},mp4a.40.2`, `${base};codecs=${v},opus`] : [`${base};codecs=${v},opus`];
+  for (const t of tries) { try { if (MediaRecorder.isTypeSupported(t)) return t; } catch {} }
+  return type;
+}
+
 function startRecording() {
-  const type = S.format;
-  const stream = canvas.captureStream(+S.fps);
+  let type = S.format;
+  const video = canvas.captureStream(+S.fps);
+  let stream = video;
+  if (S.audioExport && Sound) {
+    const audioTrack = Sound.track();
+    if (audioTrack) { stream = new MediaStream([...video.getVideoTracks(), audioTrack]); type = withAudio(type); }
+  }
   try {
-    recorder = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: S.bitrate * 1e6 });
+    recorder = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: S.bitrate * 1e6, audioBitsPerSecond: 192000 });
   } catch (err) {
-    stream.getTracks().forEach(tr => tr.stop());
+    video.getTracks().forEach(tr => tr.stop());
     alert('Could not start the recorder in this browser: ' + err.message);
     return;
   }
@@ -643,7 +827,7 @@ function startRecording() {
   recCancelled = false;
   recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
   recorder.onstop = () => {
-    stream.getTracks().forEach(tr => tr.stop());
+    video.getTracks().forEach(tr => tr.stop());   // the shared audio track stays alive for next time
     recording = false; recorder = null;
     updateRecUI();
     if (recCancelled || !chunks.length) return;
@@ -661,7 +845,7 @@ function startRecording() {
 function finishRecording() {
   if (!recorder) return;
   const r = recorder;
-  setTimeout(() => { if (r.state !== 'inactive') r.stop(); }, 200);   // hold the last frame briefly
+  setTimeout(() => { if (r.state !== 'inactive') r.stop(); }, 500);   // hold the last frame and let sound tails ring out
 }
 function cancelRecording() {
   if (!recorder) return;
@@ -739,7 +923,18 @@ const SECTIONS = [
     { k: 'duration', type: 'range', label: 'Total duration', min: 2, max: 30, step: 0.5, unit: 's' },
     { k: 'intro', type: 'range', label: 'Glitch-in length', min: 0.3, max: 10, step: 0.1, unit: 's' },
     { k: 'loop', type: 'check', label: 'Loop preview' },
-    { k: 'fadeOut', type: 'check', label: 'Glitch out at the end' },
+    { k: 'fadeOut', type: 'check', label: 'Glitch out at the end (with TV-off sound)' },
+  ] },
+  { title: 'Sound', open: true, items: [
+    { k: 'audioOn', type: 'check', label: 'Play sound in preview' },
+    { k: 'volMaster', type: 'range', label: 'Master volume', min: 0, max: 1, step: 0.01 },
+    { k: 'volHiss', type: 'range', label: 'Tape hiss & hum', min: 0, max: 1, step: 0.01 },
+    { k: 'volStatic', type: 'range', label: 'Static (glitch-in / out)', min: 0, max: 1, step: 0.01 },
+    { k: 'volGlitch', type: 'range', label: 'Tracking glitches', min: 0, max: 1, step: 0.01 },
+    { k: 'volBeep', type: 'range', label: 'Camcorder beep', min: 0, max: 1, step: 0.01 },
+    { k: 'volTv', type: 'range', label: 'TV on / off', min: 0, max: 1, step: 0.01 },
+    { k: 'audioExport', type: 'check', label: 'Include sound in exported video' },
+    { type: 'note', text: 'All sounds are generated live and follow the picture. The TV-off sound plays when "Glitch out at the end" is on. Browsers start sound only after your first click.' },
   ] },
   { title: 'Export', open: true, items: [{ type: 'export' }] },
 ];
@@ -754,6 +949,7 @@ function fmt(v, step) {
 
 function set(k, v) {
   S[k] = v;
+  if (k === 'audioOn') updateMute();
   if (!LIVE_KEYS.has(k)) dirty = true;
   if (k === 'duration' && time > v) time = v;
   save();
@@ -834,6 +1030,7 @@ function buildControl(it) {
     return btn;
   }
   if (it.type === 'export') return buildExport();
+  if (it.type === 'note') return el('div', { class: 'note', textContent: it.text });
 }
 
 function buildExport() {
@@ -920,6 +1117,7 @@ fontFile.onchange = async () => {
    ================================================================ */
 setPlaying(true);
 updateRecUI();
+updateMute();
 (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(() => { dirty = true; });
 if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => { dirty = true; });
 ensureFont();

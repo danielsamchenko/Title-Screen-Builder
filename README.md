@@ -10,12 +10,13 @@ Open `index.html` in a current Chrome, Edge, Firefox or Safari. It needs no serv
 - Analog look: pink/purple glow, red/blue chromatic fringing, scanlines, tape grain, flicker, tracking noise, head-switching noise, vignette
 - The title glitches in, settles, and then has occasional tracking hiccups (with an optional glitch-out at the end)
 - Play / pause / replay and a timeline scrubber (Space toggles playback)
+- Generated sound that follows the picture: tape hiss and hum, static on the glitch-in/out, tracking-glitch crackle, a camcorder beep and CRT TV on/off. Each has its own volume, and the sound is included in the exported video
 - 25 fonts with a visual picker, including tech fonts (Orbitron, Audiowide, VT323, Press Start 2P…) loaded from Google Fonts when online. You can also load your own font file
 - Settings are kept in your browser between visits
 
 ## Export
 
-**Export video** records the full animation in real time at 1920 × 1080. You get MP4 (H.264) when the browser supports it (recent Chrome/Edge and Safari) and WebM otherwise. Keep the tab visible while it records.
+**Export video** records the full animation, with sound, in real time at 1920 × 1080. You get MP4 (H.264) when the browser supports it (recent Chrome/Edge and Safari) and WebM otherwise. Keep the tab visible while it records.
 
 To convert a WebM to MP4:
 
